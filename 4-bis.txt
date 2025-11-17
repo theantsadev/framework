@@ -1,0 +1,7 @@
+On cree une classe ModelView {
+String view;
+}
+dans le framework
+
+puis on appelle dans le test , ModelView mv = new MV();
+mv.setView("test.jsp")
