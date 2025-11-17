@@ -1,7 +1,10 @@
 package servlet;
 
+import java.util.HashMap;
+
 public class ModelView {
     String view;
+    HashMap<String,Object> attributes;
 
     public String getView() {
         return view;
@@ -16,5 +19,14 @@ public class ModelView {
     }
 
     public ModelView() {
+        attributes = new HashMap<>();
+        
+    }
+
+    public void addAttribute(String key,Object object){
+        attributes.put(key, object);
+    }
+    public Object getAttribute(String key){
+       return  attributes.get(key);
     }
 }

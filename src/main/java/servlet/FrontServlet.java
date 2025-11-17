@@ -24,8 +24,6 @@ public class FrontServlet extends HttpServlet {
         String path = req.getRequestURI().substring(req.getContextPath().length());
         MethodInvoker invoker = (routes != null) ? routes.get(path) : null;
 
-
-
         if (invoker != null) {
             try {
                 Object controller = invoker.getControllerClass().getDeclaredConstructor().newInstance();
@@ -39,6 +37,10 @@ public class FrontServlet extends HttpServlet {
 
                 if (result instanceof ModelView) {
                     ModelView mv = (ModelView) result;
+                    String objet = "objet";
+                    if (mv.getAttribute("hello") instanceof String) {
+                        objet = (String) mv.getAttribute("hello");
+                    }
                     String view = mv.getView();
 
                     // Exemple : "test/pages/hello.jsp"
@@ -51,6 +53,7 @@ public class FrontServlet extends HttpServlet {
                     if (jspFile.exists() && jspFile.isFile()) {
                         // Transfert de la requête à Tomcat (servlet par défaut ou JSP compiler)
                         RequestDispatcher rd = context.getRequestDispatcher(viewPath);
+                        req.setAttribute("hello", objet);
                         rd.forward(req, resp);
                     } else {
                         resp.sendError(HttpServletResponse.SC_NOT_FOUND,
