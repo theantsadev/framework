@@ -8,6 +8,7 @@ import servlet.annotations.Controller;
 import servlet.annotations.Url;
 import servlet.utils.ClassDetector;
 import servlet.utils.MethodInvoker;
+import servlet.utils.UrlRouter;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import jakarta.servlet.annotation.WebListener;
@@ -18,7 +19,7 @@ public class RouteInitializer implements ServletContextListener {
     public void contextInitialized(ServletContextEvent sce) {
         try {
             ServletContext context = sce.getServletContext();
-            Map<String, MethodInvoker> routes = new HashMap<>();
+            UrlRouter routes = new UrlRouter();
 
             List<Class<?>> classes = ClassDetector.getAllClassesFromClasspath();
             for (Class<?> c : classes) {
@@ -26,7 +27,8 @@ public class RouteInitializer implements ServletContextListener {
                     for (var m : c.getDeclaredMethods()) {
                         if (m.isAnnotationPresent(Url.class)) {
                             Url annotation = m.getAnnotation(Url.class);
-                            routes.put(annotation.value(), new MethodInvoker(c, m));
+                            String value = annotation.value();
+                            routes.put(value, new MethodInvoker(c, m));
                         }
                     }
                 }
