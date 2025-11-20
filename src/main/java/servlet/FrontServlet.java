@@ -22,6 +22,8 @@ public class FrontServlet extends HttpServlet {
 
         if (invoker != null) {
             try {
+                resp.getWriter().print(req.getParameter("var2") != null);
+
                 String methodName = invoker.getMethod().getName();
                 resp.getWriter().print("Url enregistré : " + path + " -> " + methodName);
             } catch (Exception e) {
