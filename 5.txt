@@ -1,2 +1,0 @@
-- ahoana ny atao raha andefa donnee makany @ vue avy @ controller
-- inona no tokony atao coté framework
