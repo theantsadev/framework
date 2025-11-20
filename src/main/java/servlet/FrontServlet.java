@@ -3,6 +3,10 @@ package servlet;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.util.Map;
+
 import servlet.utils.MethodInvoker;
 import servlet.utils.UrlRouter;
 
@@ -22,10 +26,22 @@ public class FrontServlet extends HttpServlet {
 
         if (invoker != null) {
             try {
-                resp.getWriter().print(req.getParameter("var2") != null);
-
+                Map<String, String[]> params = req.getParameterMap();
+                Method method = invoker.getMethod();
+                Parameter[] methodParameters = method.getParameters();
+                for (Parameter parameter : methodParameters) {
+                    for (Map.Entry<String, String[]> entry : params.entrySet()) {
+                        String key = entry.getKey();
+                        String[] values = entry.getValue();
+                        
+                        if (parameter.getName().equals(key)) {
+                            resp.getWriter()
+                                    .println("le parametre " + key + " existe dans la methode " + method.getName());
+                        }
+                    }
+                }
                 String methodName = invoker.getMethod().getName();
-                resp.getWriter().print("Url enregistré : " + path + " -> " + methodName);
+                resp.getWriter().println("Url enregistré : " + path + " -> " + methodName);
             } catch (Exception e) {
                 e.printStackTrace(resp.getWriter());
             }
