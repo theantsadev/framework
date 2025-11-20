@@ -3,11 +3,6 @@ package servlet;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.IOException;
-import java.util.*;
-
-import servlet.annotations.Controller;
-import servlet.annotations.Url;
-import servlet.utils.ClassDetector;
 import servlet.utils.MethodInvoker;
 import servlet.utils.UrlRouter;
 
