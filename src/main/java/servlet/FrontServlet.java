@@ -26,27 +26,57 @@ public class FrontServlet extends HttpServlet {
 
         if (invoker != null) {
             try {
+                // 1 Récupérer tous les paramètres de la requête
                 Map<String, String[]> params = req.getParameterMap();
+
+                // 2 Récupérer la méthode à invoquer et ses paramètres
                 Method method = invoker.getMethod();
                 Parameter[] methodParameters = method.getParameters();
-                for (Parameter parameter : methodParameters) {
-                    for (Map.Entry<String, String[]> entry : params.entrySet()) {
-                        String key = entry.getKey();
-                        String[] values = entry.getValue();
-                        
-                        if (parameter.getName().equals(key)) {
-                            resp.getWriter()
-                                    .println("le parametre " + key + " existe dans la methode " + method.getName());
-                        }
-                    }
+                Object[] args = new Object[methodParameters.length];
+
+                // 3 Remplir le tableau args avec les valeurs converties
+                for (int i = 0; i < methodParameters.length; i++) {
+                    Parameter param = methodParameters[i];
+                    String paramName = param.getName(); // nécessite javac -parameters
+
+                    String[] rawValues = params.get(paramName);
+                    String raw = (rawValues != null && rawValues.length > 0) ? rawValues[0] : null;
+
+                    args[i] = convertType(raw, param.getType());
                 }
-                String methodName = invoker.getMethod().getName();
-                resp.getWriter().println("Url enregistré : " + path + " -> " + methodName);
+
+                // 4 Appeler la méthode sur l'objet contrôleur
+                Object invokedObject = invoker.execute(args);
+
+                // 5 Gérer le retour
+                if (invokedObject instanceof String) {
+                    resp.getWriter().println(invokedObject);
+                }
+
             } catch (Exception e) {
                 e.printStackTrace(resp.getWriter());
             }
+
         } else {
             resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
         }
+    }
+
+    // Conversion automatique des types simples
+    private Object convertType(String value, Class<?> type) {
+        if (value == null)
+            return null;
+
+        if (type == String.class)
+            return value;
+        if (type == int.class || type == Integer.class)
+            return Integer.parseInt(value);
+        if (type == double.class || type == Double.class)
+            return Double.parseDouble(value);
+        if (type == boolean.class || type == Boolean.class)
+            return Boolean.parseBoolean(value);
+
+        // Ajouter d'autres types si nécessaire (long, float, etc.)
+        return value; // fallback
     }
 }
