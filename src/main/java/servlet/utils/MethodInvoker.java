@@ -24,4 +24,9 @@ public class MethodInvoker {
         this.controllerClass = c;
         this.method = m;
     }
+
+    public Object execute(Object... args) throws Exception {
+        Object object = controllerClass.getDeclaredConstructor().newInstance();
+        return method.invoke(object, args);
+    }
 }
