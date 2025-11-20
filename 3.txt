@@ -1,3 +1,0 @@
-- mila ananantsika ny controller sy ny url
-- au démarrage de l'application de test , scannena ny classpath de jerena ze misy annotation 
-de stockena 
