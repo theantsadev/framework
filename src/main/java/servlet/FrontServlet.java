@@ -7,10 +7,13 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
 
+import servlet.annotations.RequestParam;
 import servlet.utils.MethodInvoker;
 import servlet.utils.UrlRouter;
 
 public class FrontServlet extends HttpServlet {
+
+    private static final boolean DEBUG = true; // Active/Désactive le debug
 
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp)
@@ -24,33 +27,74 @@ public class FrontServlet extends HttpServlet {
 
         resp.setContentType("text/plain");
 
+        if (DEBUG) {
+            System.out.println("\n========== DEBUG FrontServlet ==========");
+            System.out.println("URL appelée : " + path);
+            System.out.println("Route trouvée : " + (invoker != null));
+        }
+
         if (invoker != null) {
             try {
-                // 1 Récupérer tous les paramètres de la requête
                 Map<String, String[]> params = req.getParameterMap();
 
-                // 2 Récupérer la méthode à invoquer et ses paramètres
+                if (DEBUG) {
+                    System.out.println("\n-- Paramètres HTTP reçus --");
+                    params.forEach((k, v) -> System.out.println(k + " = " + String.join(",", v)));
+                }
+
                 Method method = invoker.getMethod();
                 Parameter[] methodParameters = method.getParameters();
                 Object[] args = new Object[methodParameters.length];
 
-                // 3 Remplir le tableau args avec les valeurs converties
+                if (DEBUG) {
+                    System.out.println("\n-- Méthode cible --");
+                    System.out.println("Classe : " + method.getDeclaringClass().getName());
+                    System.out.println("Méthode : " + method.getName());
+                }
+
                 for (int i = 0; i < methodParameters.length; i++) {
                     Parameter param = methodParameters[i];
-                    String paramName = param.getName(); // nécessite javac -parameters
+                    String paramName = null;
+
+                    if (param.isAnnotationPresent(RequestParam.class)) {
+                        RequestParam reqParam = param.getAnnotation(RequestParam.class);
+                        paramName = reqParam.name();
+                    }
+
+                    // javac -parameters permet d'utiliser le nom réel de l'arg si name=""
+                    if (paramName == null || paramName.isEmpty()) {
+                        paramName = param.getName();
+                    }
 
                     String[] rawValues = params.get(paramName);
                     String raw = (rawValues != null && rawValues.length > 0) ? rawValues[0] : null;
 
-                    args[i] = convertType(raw, param.getType());
+                    Object converted = convertType(raw, param.getType());
+                    args[i] = converted;
+
+                    if (DEBUG) {
+                        System.out.println("\nParamètre #" + i);
+                        System.out.println("  Nom Java        : " + param.getName());
+                        System.out.println("  Nom attendu     : " + paramName);
+                        System.out.println("  Type            : " + param.getType().getSimpleName());
+                        System.out.println("  Valeur brute    : " + raw);
+                        System.out.println("  Valeur convertie: " + converted);
+                    }
                 }
 
-                // 4 Appeler la méthode sur l'objet contrôleur
                 Object invokedObject = invoker.execute(args);
 
-                // 5 Gérer le retour
+                if (DEBUG) {
+                    System.out.println("\n-- Retour méthode --");
+                    System.out.println("Valeur retournée: " + invokedObject);
+                }
+
                 if (invokedObject instanceof String) {
                     resp.getWriter().println(invokedObject);
+                }
+
+                if (DEBUG) {
+                    System.out.println("=======================================\n");
                 }
 
             } catch (Exception e) {
@@ -62,7 +106,6 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    // Conversion automatique des types simples
     private Object convertType(String value, Class<?> type) {
         if (value == null)
             return null;
@@ -76,7 +119,6 @@ public class FrontServlet extends HttpServlet {
         if (type == boolean.class || type == Boolean.class)
             return Boolean.parseBoolean(value);
 
-        // Ajouter d'autres types si nécessaire (long, float, etc.)
-        return value; // fallback
+        return value;
     }
 }
