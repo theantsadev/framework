@@ -1,8 +1,8 @@
 package servlet.listener;
 
-import java.util.HashMap;
+
 import java.util.List;
-import java.util.Map;
+
 
 import servlet.annotations.Controller;
 import servlet.annotations.Url;
@@ -10,7 +10,6 @@ import servlet.utils.ClassDetector;
 import servlet.utils.MethodInvoker;
 import servlet.utils.UrlRouter;
 import jakarta.servlet.*;
-import jakarta.servlet.http.*;
 import jakarta.servlet.annotation.WebListener;
 
 @WebListener
