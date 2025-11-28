@@ -23,8 +23,9 @@ public class FrontServlet extends HttpServlet {
         ServletContext context = getServletContext();
         UrlRouter routes = (UrlRouter) context.getAttribute("routes");
 
+        String httpMethod = req.getMethod();
         String path = req.getRequestURI().substring(req.getContextPath().length());
-        RouteMatch routeMatch = (routes != null) ? routes.findByUrl(path) : null;
+        RouteMatch routeMatch = (routes != null) ? routes.findByUrl(path, httpMethod) : null;
 
         resp.setContentType("text/plain");
 
@@ -40,7 +41,7 @@ public class FrontServlet extends HttpServlet {
         if (DEBUG) {
             System.out.println("\n========== DEBUG FrontServlet ==========");
             System.out.println("URL appelée       : " + path);
-            System.out.println("Route trouvée     : " + (invoker != null));
+            System.out.println("Route trouvée     : " + invoker.getMethod().getName());
             System.out.println("Paramètres PATH   : " + pathParams);
             System.out.println("Paramètres QUERY  : " + queryParams);
         }
