@@ -26,7 +26,7 @@ public class UrlRouter extends HashMap<String, MethodInvoker> {
 
             String urlPattern = entry.getKey();
             MethodInvoker invoker = entry.getValue();
-
+            System.out.println(invoker.getMethod().getAnnotations().toString()+" " +httpAnnotation);
             // Étape 1 : Vérifier si l’URL correspond
             if (!UrlMatcher.match(urlPattern, urlSpec)) {
                 continue;
@@ -34,7 +34,19 @@ public class UrlRouter extends HashMap<String, MethodInvoker> {
 
             // Étape 2 : Vérifier si la méthode correspond au verbe HTTP
             if (httpAnnotation != null && !invoker.getMethod().isAnnotationPresent(httpAnnotation)) {
-                continue;
+                // System.out.println(httpAnnotation + " " + invoker.getMethod().getName());
+                Annotation[] annotations = invoker.getMethod().getAnnotations();
+                boolean test = false;
+                for (Annotation annotation : annotations) {
+                    if (annotation.getClass().equals(httpAnnotation)) {
+                        test = true;
+                    }
+                }
+                if (!test) {
+                    continue;
+                }
+            } else {
+                System.out.println(httpAnnotation + " " + invoker.getMethod().getAnnotation(httpAnnotation));
             }
 
             // Étape 3 : Renvoyer la bonne route
