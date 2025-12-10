@@ -8,6 +8,7 @@ import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import servlet.annotations.RequestParam;
 import servlet.utils.MethodInvoker;
@@ -36,7 +37,6 @@ public class FrontServlet extends HttpServlet {
             debugOutput.append("Routes totales    : ").append(routes != null ? routes.size() : 0).append("\n");
             debugOutput.append("HTTP Method       : ").append(httpMethod).append("\n");
             debugOutput.append("URL appelée       : ").append(path).append("\n");
-
             System.out.println(debugOutput.toString());
         }
 
@@ -59,7 +59,6 @@ public class FrontServlet extends HttpServlet {
             debugOutput.append("Route trouvée     : ").append(invoker.getMethod().getName()).append("\n");
             debugOutput.append("Paramètres PATH   : ").append(pathParams).append("\n");
             debugOutput.append("Paramètres QUERY  : ").append(queryParams).append("\n");
-
             System.out.println("Route trouvée     : " + invoker.getMethod().getName());
             System.out.println("Paramètres PATH   : " + pathParams);
             System.out.println("Paramètres QUERY  : " + queryParams);
@@ -74,7 +73,6 @@ public class FrontServlet extends HttpServlet {
                 debugOutput.append("\n-- Méthode cible --\n");
                 debugOutput.append("Classe : ").append(method.getDeclaringClass().getName()).append("\n");
                 debugOutput.append("Méthode : ").append(method.getName()).append("\n");
-
                 System.out.println("\n-- Méthode cible --");
                 System.out.println("Classe : " + method.getDeclaringClass().getName());
                 System.out.println("Méthode : " + method.getName());
@@ -96,7 +94,17 @@ public class FrontServlet extends HttpServlet {
                     paramName = param.getName();
                 }
 
-                // 3 Récupérer valeur : priorité PATH, sinon QUERY
+                // 3 Injection Map<String,Object> si paramètre Map
+                if (Map.class.isAssignableFrom(param.getType())) {
+                    args[i] = queryParams.entrySet().stream()
+                            .collect(Collectors.toMap(
+                                    Map.Entry::getKey,
+                                    e -> e.getValue()[0] // prendre la première valeur
+                            ));
+                    continue;
+                }
+
+                // 4 Récupérer valeur : priorité PATH, sinon QUERY
                 String raw = null;
                 if (pathParams != null && pathParams.containsKey(paramName)) {
                     raw = pathParams.get(paramName);
@@ -105,7 +113,7 @@ public class FrontServlet extends HttpServlet {
                     raw = (rawValues != null && rawValues.length > 0) ? rawValues[0] : null;
                 }
 
-                // 4 Conversion automatique
+                // 5 Conversion automatique
                 Object converted = convertType(raw, param.getType());
                 args[i] = converted;
 
@@ -126,7 +134,7 @@ public class FrontServlet extends HttpServlet {
                 }
             }
 
-            // 5 Exécution de la méthode
+            // 6 Exécution de la méthode
             Object result = invoker.execute(args);
 
             if (DEBUG) {
@@ -143,7 +151,7 @@ public class FrontServlet extends HttpServlet {
                 System.out.println("=======================================\n");
             }
 
-            // 6 Traitement du retour
+            // 7 Traitement du retour
             if (result instanceof String) {
                 resp.setContentType("text/plain;charset=UTF-8");
                 PrintWriter writer = resp.getWriter();
@@ -160,44 +168,24 @@ public class FrontServlet extends HttpServlet {
             if (result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
                 String view = mv.getView();
-
-                // Exemple : "test/pages/hello.jsp"
                 String viewPath = "/" + view; // chemin relatif au contexte
+                File jspFile = new File(context.getRealPath(viewPath));
 
-                String realPath = context.getRealPath(viewPath);
-
-                if (DEBUG) {
-                    debugOutput.append("\n-- Résolution de vue --\n");
-                    debugOutput.append("Vue demandée    : ").append(view).append("\n");
-                    debugOutput.append("ViewPath        : ").append(viewPath).append("\n");
-                    debugOutput.append("RealPath        : ").append(realPath).append("\n");
-
-                    System.out.println("\n-- Résolution de vue --");
-                    System.out.println("Vue demandée    : " + view);
-                    System.out.println("ViewPath        : " + viewPath);
-                    System.out.println("RealPath        : " + realPath);
-                }
-
-                File jspFile = new File(realPath);
                 if (jspFile.exists() && jspFile.isFile()) {
-                    // Si debug activé, stocker le debug dans la requête pour l'afficher dans la JSP
-                    // si besoin
                     if (DEBUG) {
                         req.setAttribute("_debugOutput", debugOutput.toString());
                     }
-
-                    // Transfert de la requête à Tomcat (servlet par défaut ou JSP compiler)
-                    RequestDispatcher rd = context.getRequestDispatcher(viewPath);
                     mv.passVar(req);
+                    RequestDispatcher rd = context.getRequestDispatcher(viewPath);
                     rd.forward(req, resp);
                 } else {
                     resp.setContentType("text/plain");
                     if (DEBUG) {
                         resp.getWriter().println(debugOutput.toString());
-                        resp.getWriter().println("\n ERREUR : Vue introuvable : " + realPath);
+                        resp.getWriter().println("\n ERREUR : Vue introuvable : " + context.getRealPath(viewPath));
                     } else {
                         resp.sendError(HttpServletResponse.SC_NOT_FOUND,
-                                "Vue introuvable : " + realPath);
+                                "Vue introuvable : " + context.getRealPath(viewPath));
                     }
                 }
                 return;
@@ -231,7 +219,6 @@ public class FrontServlet extends HttpServlet {
     private Object convertType(String value, Class<?> type) {
         if (value == null)
             return null;
-
         if (type == String.class)
             return value;
         if (type == int.class || type == Integer.class)
@@ -240,7 +227,6 @@ public class FrontServlet extends HttpServlet {
             return Double.parseDouble(value);
         if (type == boolean.class || type == Boolean.class)
             return Boolean.parseBoolean(value);
-
         return value; // fallback
     }
 }
