@@ -44,7 +44,7 @@ public class FrontServlet extends HttpServlet {
             resp.setContentType("text/plain");
             if (DEBUG) {
                 resp.getWriter().print(debugOutput.toString());
-                resp.getWriter().print("\n❌ 404 - Aucun contrôleur trouvé pour " + path);
+                resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
             } else {
                 resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
             }
@@ -194,7 +194,7 @@ public class FrontServlet extends HttpServlet {
                     resp.setContentType("text/plain");
                     if (DEBUG) {
                         resp.getWriter().println(debugOutput.toString());
-                        resp.getWriter().println("\n❌ ERREUR : Vue introuvable : " + realPath);
+                        resp.getWriter().println("\n ERREUR : Vue introuvable : " + realPath);
                     } else {
                         resp.sendError(HttpServletResponse.SC_NOT_FOUND,
                                 "Vue introuvable : " + realPath);
@@ -220,7 +220,7 @@ public class FrontServlet extends HttpServlet {
 
             if (DEBUG) {
                 writer.println(debugOutput.toString());
-                writer.println("\n========== ❌ ERREUR ==========");
+                writer.println("\n==========  ERREUR ==========");
             }
 
             e.printStackTrace(writer);
