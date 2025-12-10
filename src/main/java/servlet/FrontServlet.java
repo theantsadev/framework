@@ -4,6 +4,7 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Map;
@@ -23,21 +24,30 @@ public class FrontServlet extends HttpServlet {
 
         ServletContext context = getServletContext();
         UrlRouter routes = (UrlRouter) context.getAttribute("routes");
-        
+
         String httpMethod = req.getMethod();
         String path = req.getRequestURI().substring(req.getContextPath().length());
         RouteMatch routeMatch = (routes != null) ? routes.findByUrl(path, httpMethod) : null;
 
+        StringBuilder debugOutput = new StringBuilder();
+
         if (DEBUG) {
-            System.out.println("\n========== DEBUG FrontServlet ==========");
-            System.out.println("Routes totales    : " + (routes != null ? routes.size() : 0));
-            System.out.println("HTTP Method       : " + httpMethod);
-            System.out.println("URL appelée       : " + path);
+            debugOutput.append("\n========== DEBUG FrontServlet ==========\n");
+            debugOutput.append("Routes totales    : ").append(routes != null ? routes.size() : 0).append("\n");
+            debugOutput.append("HTTP Method       : ").append(httpMethod).append("\n");
+            debugOutput.append("URL appelée       : ").append(path).append("\n");
+
+            System.out.println(debugOutput.toString());
         }
 
         if (routeMatch == null) {
             resp.setContentType("text/plain");
-            resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
+            if (DEBUG) {
+                resp.getWriter().print(debugOutput.toString());
+                resp.getWriter().print("\n❌ 404 - Aucun contrôleur trouvé pour " + path);
+            } else {
+                resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
+            }
             return;
         }
 
@@ -46,6 +56,10 @@ public class FrontServlet extends HttpServlet {
         Map<String, String[]> queryParams = req.getParameterMap();
 
         if (DEBUG) {
+            debugOutput.append("Route trouvée     : ").append(invoker.getMethod().getName()).append("\n");
+            debugOutput.append("Paramètres PATH   : ").append(pathParams).append("\n");
+            debugOutput.append("Paramètres QUERY  : ").append(queryParams).append("\n");
+
             System.out.println("Route trouvée     : " + invoker.getMethod().getName());
             System.out.println("Paramètres PATH   : " + pathParams);
             System.out.println("Paramètres QUERY  : " + queryParams);
@@ -57,6 +71,10 @@ public class FrontServlet extends HttpServlet {
             Object[] args = new Object[methodParameters.length];
 
             if (DEBUG) {
+                debugOutput.append("\n-- Méthode cible --\n");
+                debugOutput.append("Classe : ").append(method.getDeclaringClass().getName()).append("\n");
+                debugOutput.append("Méthode : ").append(method.getName()).append("\n");
+
                 System.out.println("\n-- Méthode cible --");
                 System.out.println("Classe : " + method.getDeclaringClass().getName());
                 System.out.println("Méthode : " + method.getName());
@@ -92,6 +110,13 @@ public class FrontServlet extends HttpServlet {
                 args[i] = converted;
 
                 if (DEBUG) {
+                    debugOutput.append("\nParamètre #").append(i).append("\n");
+                    debugOutput.append("  Nom Java        : ").append(param.getName()).append("\n");
+                    debugOutput.append("  Nom attendu     : ").append(paramName).append("\n");
+                    debugOutput.append("  Type            : ").append(param.getType().getSimpleName()).append("\n");
+                    debugOutput.append("  Valeur brute    : ").append(raw).append("\n");
+                    debugOutput.append("  Valeur convertie: ").append(converted).append("\n");
+
                     System.out.println("\nParamètre #" + i);
                     System.out.println("  Nom Java        : " + param.getName());
                     System.out.println("  Nom attendu     : " + paramName);
@@ -105,16 +130,30 @@ public class FrontServlet extends HttpServlet {
             Object result = invoker.execute(args);
 
             if (DEBUG) {
+                debugOutput.append("\n-- Retour méthode --\n");
+                debugOutput.append("Valeur retournée: ").append(result).append("\n");
+                debugOutput.append("Type de retour  : ")
+                        .append(result != null ? result.getClass().getSimpleName() : "null").append("\n");
+                debugOutput.append("=======================================\n");
+
                 System.out.println("\n-- Retour méthode --");
                 System.out.println("Valeur retournée: " + result);
-                System.out.println("Type de retour  : " + (result != null ? result.getClass().getSimpleName() : "null"));
+                System.out
+                        .println("Type de retour  : " + (result != null ? result.getClass().getSimpleName() : "null"));
                 System.out.println("=======================================\n");
             }
 
             // 6 Traitement du retour
             if (result instanceof String) {
                 resp.setContentType("text/plain;charset=UTF-8");
-                resp.getWriter().println(result);
+                PrintWriter writer = resp.getWriter();
+
+                if (DEBUG) {
+                    writer.println(debugOutput.toString());
+                    writer.println("\n========== RÉSULTAT ==========");
+                }
+
+                writer.println(result);
                 return;
             }
 
@@ -126,8 +165,13 @@ public class FrontServlet extends HttpServlet {
                 String viewPath = "/" + view; // chemin relatif au contexte
 
                 String realPath = context.getRealPath(viewPath);
-                
+
                 if (DEBUG) {
+                    debugOutput.append("\n-- Résolution de vue --\n");
+                    debugOutput.append("Vue demandée    : ").append(view).append("\n");
+                    debugOutput.append("ViewPath        : ").append(viewPath).append("\n");
+                    debugOutput.append("RealPath        : ").append(realPath).append("\n");
+
                     System.out.println("\n-- Résolution de vue --");
                     System.out.println("Vue demandée    : " + view);
                     System.out.println("ViewPath        : " + viewPath);
@@ -136,24 +180,50 @@ public class FrontServlet extends HttpServlet {
 
                 File jspFile = new File(realPath);
                 if (jspFile.exists() && jspFile.isFile()) {
+                    // Si debug activé, stocker le debug dans la requête pour l'afficher dans la JSP
+                    // si besoin
+                    if (DEBUG) {
+                        req.setAttribute("_debugOutput", debugOutput.toString());
+                    }
+
                     // Transfert de la requête à Tomcat (servlet par défaut ou JSP compiler)
                     RequestDispatcher rd = context.getRequestDispatcher(viewPath);
                     mv.passVar(req);
                     rd.forward(req, resp);
                 } else {
-                    resp.sendError(HttpServletResponse.SC_NOT_FOUND,
-                            "Vue introuvable : " + realPath);
+                    resp.setContentType("text/plain");
+                    if (DEBUG) {
+                        resp.getWriter().println(debugOutput.toString());
+                        resp.getWriter().println("\n❌ ERREUR : Vue introuvable : " + realPath);
+                    } else {
+                        resp.sendError(HttpServletResponse.SC_NOT_FOUND,
+                                "Vue introuvable : " + realPath);
+                    }
                 }
                 return;
             }
 
             // Fallback si type de retour inconnu
             resp.setContentType("text/plain");
-            resp.getWriter().println(result);
+            PrintWriter writer = resp.getWriter();
+
+            if (DEBUG) {
+                writer.println(debugOutput.toString());
+                writer.println("\n========== RÉSULTAT (type inconnu) ==========");
+            }
+
+            writer.println(result);
 
         } catch (Exception e) {
             resp.setContentType("text/plain");
-            e.printStackTrace(resp.getWriter());
+            PrintWriter writer = resp.getWriter();
+
+            if (DEBUG) {
+                writer.println(debugOutput.toString());
+                writer.println("\n========== ❌ ERREUR ==========");
+            }
+
+            e.printStackTrace(writer);
         }
     }
 
