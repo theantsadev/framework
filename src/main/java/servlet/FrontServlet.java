@@ -2,6 +2,7 @@ package servlet;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -22,15 +23,20 @@ public class FrontServlet extends HttpServlet {
 
         ServletContext context = getServletContext();
         UrlRouter routes = (UrlRouter) context.getAttribute("routes");
-        System.out.println(routes.size());
+        
         String httpMethod = req.getMethod();
         String path = req.getRequestURI().substring(req.getContextPath().length());
         RouteMatch routeMatch = (routes != null) ? routes.findByUrl(path, httpMethod) : null;
-        // System.out.println(routeMatch);
 
-        resp.setContentType("text/plain");
+        if (DEBUG) {
+            System.out.println("\n========== DEBUG FrontServlet ==========");
+            System.out.println("Routes totales    : " + (routes != null ? routes.size() : 0));
+            System.out.println("HTTP Method       : " + httpMethod);
+            System.out.println("URL appelée       : " + path);
+        }
 
         if (routeMatch == null) {
+            resp.setContentType("text/plain");
             resp.getWriter().print("404 - Aucun contrôleur trouvé pour " + path);
             return;
         }
@@ -40,8 +46,6 @@ public class FrontServlet extends HttpServlet {
         Map<String, String[]> queryParams = req.getParameterMap();
 
         if (DEBUG) {
-            System.out.println("\n========== DEBUG FrontServlet ==========");
-            System.out.println("URL appelée       : " + path);
             System.out.println("Route trouvée     : " + invoker.getMethod().getName());
             System.out.println("Paramètres PATH   : " + pathParams);
             System.out.println("Paramètres QUERY  : " + queryParams);
@@ -58,6 +62,7 @@ public class FrontServlet extends HttpServlet {
                 System.out.println("Méthode : " + method.getName());
             }
 
+            // Injection des paramètres
             for (int i = 0; i < methodParameters.length; i++) {
                 Parameter param = methodParameters[i];
                 String paramName = null;
@@ -97,17 +102,57 @@ public class FrontServlet extends HttpServlet {
             }
 
             // 5 Exécution de la méthode
-            Object invokedObject = invoker.execute(args);
+            Object result = invoker.execute(args);
 
             if (DEBUG) {
                 System.out.println("\n-- Retour méthode --");
-                System.out.println("Valeur retournée: " + invokedObject);
+                System.out.println("Valeur retournée: " + result);
+                System.out.println("Type de retour  : " + (result != null ? result.getClass().getSimpleName() : "null"));
                 System.out.println("=======================================\n");
             }
 
-            resp.getWriter().println(invokedObject);
+            // 6 Traitement du retour
+            if (result instanceof String) {
+                resp.setContentType("text/plain;charset=UTF-8");
+                resp.getWriter().println(result);
+                return;
+            }
+
+            if (result instanceof ModelView) {
+                ModelView mv = (ModelView) result;
+                String view = mv.getView();
+
+                // Exemple : "test/pages/hello.jsp"
+                String viewPath = "/" + view; // chemin relatif au contexte
+
+                String realPath = context.getRealPath(viewPath);
+                
+                if (DEBUG) {
+                    System.out.println("\n-- Résolution de vue --");
+                    System.out.println("Vue demandée    : " + view);
+                    System.out.println("ViewPath        : " + viewPath);
+                    System.out.println("RealPath        : " + realPath);
+                }
+
+                File jspFile = new File(realPath);
+                if (jspFile.exists() && jspFile.isFile()) {
+                    // Transfert de la requête à Tomcat (servlet par défaut ou JSP compiler)
+                    RequestDispatcher rd = context.getRequestDispatcher(viewPath);
+                    mv.passVar(req);
+                    rd.forward(req, resp);
+                } else {
+                    resp.sendError(HttpServletResponse.SC_NOT_FOUND,
+                            "Vue introuvable : " + realPath);
+                }
+                return;
+            }
+
+            // Fallback si type de retour inconnu
+            resp.setContentType("text/plain");
+            resp.getWriter().println(result);
 
         } catch (Exception e) {
+            resp.setContentType("text/plain");
             e.printStackTrace(resp.getWriter());
         }
     }
