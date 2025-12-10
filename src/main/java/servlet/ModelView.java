@@ -2,10 +2,16 @@ package servlet;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
+import java.util.Map;
 
 public class ModelView {
     String view;
-    HashMap<String, Object> attributes;
+
+    public void setAttributes(Map<String, Object> attributes) {
+        this.attributes = attributes;
+    }
+
+    Map<String, Object> attributes;
 
     public String getView() {
         return view;
