@@ -1,68 +1,50 @@
 package servlet.utils;
 
-import java.lang.annotation.Annotation;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-import servlet.annotations.mapping.GetMapping;
-import servlet.annotations.mapping.PostMapping;
+public class UrlRouter extends HashMap<String, List<RegisteredRoute>> {
 
-public class UrlRouter extends HashMap<String, MethodInvoker> {
-    public Class<? extends Annotation> getAnnotationByMethod(String httpMethod) {
-        if ("GET".equalsIgnoreCase(httpMethod)) {
-            return GetMapping.class;
-        } else if ("POST".equalsIgnoreCase(httpMethod)) {
-            return PostMapping.class;
-        }
-        return null;
+    public void addRoute(String urlPattern, String httpMethod, MethodInvoker invoker) {
+
+        this.computeIfAbsent(urlPattern, k -> new ArrayList<>())
+                .add(new RegisteredRoute(httpMethod, invoker));
     }
 
     public RouteMatch findByUrl(String urlSpec, String httpMethod) {
 
-        Class<? extends Annotation> httpAnnotation = getAnnotationByMethod(httpMethod); // GetMapping.class ou
-                                                                                        // PostMapping.class
-
-        for (Map.Entry<String, MethodInvoker> entry : this.entrySet()) {
+        for (Map.Entry<String, List<RegisteredRoute>> entry : this.entrySet()) {
 
             String urlPattern = entry.getKey();
-            MethodInvoker invoker = entry.getValue();
-            System.out.println(invoker.getMethod().getAnnotations().toString()+" " +httpAnnotation);
-            // Étape 1 : Vérifier si l’URL correspond
+
+            // 1) Check URL matching
             if (!UrlMatcher.match(urlPattern, urlSpec)) {
                 continue;
             }
 
-            // Étape 2 : Vérifier si la méthode correspond au verbe HTTP
-            if (httpAnnotation != null && !invoker.getMethod().isAnnotationPresent(httpAnnotation)) {
-                // System.out.println(httpAnnotation + " " + invoker.getMethod().getName());
-                Annotation[] annotations = invoker.getMethod().getAnnotations();
-                boolean test = false;
-                for (Annotation annotation : annotations) {
-                    if (annotation.getClass().equals(httpAnnotation)) {
-                        test = true;
-                    }
-                }
-                if (!test) {
+            List<RegisteredRoute> registered = entry.getValue();
+
+            for (RegisteredRoute route : registered) {
+
+                // 2) Check HTTP method
+                if (!route.getHttpMethod().equalsIgnoreCase(httpMethod)) {
+                    System.out.println(route.getHttpMethod());
                     continue;
                 }
-            } else {
-                System.out.println(httpAnnotation + " " + invoker.getMethod().getAnnotation(httpAnnotation));
-            }
 
-            // Étape 3 : Renvoyer la bonne route
-            RouteMatch match = new RouteMatch();
-            match.setMethod(invoker);
+                // 3) Cette route matche parfaitement
+                RouteMatch match = new RouteMatch();
+                match.setMethod(route.getInvoker());
 
-            Map<String, String> params = UrlMatcher.extractParams(urlPattern, urlSpec);
-            if (params != null) {
+                Map<String, String> params = UrlMatcher.extractParams(urlPattern, urlSpec);
                 match.setPathParams(params);
-            }
 
-            return match;
+                return match;
+            }
         }
 
-        // Aucun route trouvée
         return null;
     }
-
 }

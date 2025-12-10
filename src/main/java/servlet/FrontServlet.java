@@ -22,10 +22,11 @@ public class FrontServlet extends HttpServlet {
 
         ServletContext context = getServletContext();
         UrlRouter routes = (UrlRouter) context.getAttribute("routes");
-
+        System.out.println(routes.size());
         String httpMethod = req.getMethod();
         String path = req.getRequestURI().substring(req.getContextPath().length());
         RouteMatch routeMatch = (routes != null) ? routes.findByUrl(path, httpMethod) : null;
+        // System.out.println(routeMatch);
 
         resp.setContentType("text/plain");
 

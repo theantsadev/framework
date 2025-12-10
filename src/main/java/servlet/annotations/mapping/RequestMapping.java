@@ -5,8 +5,11 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import servlet.enums.RequestMethod;
+
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
+@Target({ ElementType.TYPE, ElementType.METHOD })
 public @interface RequestMapping {
     String value() default "";
+    RequestMethod method() default RequestMethod.GET;
 }
