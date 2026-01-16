@@ -2,6 +2,7 @@ package servlet;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,6 +14,10 @@ import servlet.utils.UrlRouter;
 import java.io.IOException;
 import java.lang.reflect.Method;
 
+@MultipartConfig(fileSizeThreshold = 1024 * 1024, // 1 MB
+        maxFileSize = 1024 * 1024 * 10, // 10 MB
+        maxRequestSize = 1024 * 1024 * 50 // 50 MB
+)
 public class FrontServlet extends HttpServlet {
 
     private UrlRouter routes;
