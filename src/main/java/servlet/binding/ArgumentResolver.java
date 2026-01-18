@@ -1,8 +1,12 @@
 package servlet.binding;
 
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.Part;
 import servlet.annotations.RequestParam;
+import servlet.annotations.Session;
+import servlet.session.CustomSession;
+import servlet.session.SessionManager;
 import servlet.utils.RouteMatch;
 import servlet.utils.Upload;
 
@@ -13,6 +17,7 @@ import java.util.stream.Collectors;
 public class ArgumentResolver {
 
     private static final boolean DEBUG = true;
+    private static final String SESSION_COOKIE_NAME = "FRAMEWORK_SESSION_ID"; // Changé pour éviter conflit avec Tomcat
     private final TypeConverter converter = new TypeConverter();
 
     public Object[] resolve(RouteMatch routeMatch, HttpServletRequest req, StringBuilder debug) throws Exception {
@@ -23,38 +28,42 @@ public class ArgumentResolver {
         Map<String, String> pathParams = routeMatch.getPathParams();
         Map<String, String[]> queryParams = req.getParameterMap();
 
-        // Vérifier si c'est une requête multipart (upload)
-        boolean isMultipart = req.getContentType() != null &&
-                req.getContentType().toLowerCase().startsWith("multipart/form-data");
+        boolean isMultipart = req.getContentType() != null && 
+                              req.getContentType().toLowerCase().startsWith("multipart/form-data");
 
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = getParameterName(param);
             Class<?> paramType = param.getType();
 
-            // Gérer Map<String, List<Upload>> pour les uploads multiples
+            // ============ GESTION @Session ============
+            if (param.isAnnotationPresent(Session.class) && paramType.equals(CustomSession.class)) {
+                Session sessionAnnotation = param.getAnnotation(Session.class);
+                args[i] = resolveSession(req, sessionAnnotation.create(), debug);
+                continue;
+            }
+
+            // ============ GESTION UPLOAD ============
             if (isMultipart && Map.class.isAssignableFrom(paramType)) {
                 Type genericType = param.getParameterizedType();
                 if (genericType instanceof ParameterizedType) {
                     Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
-                    if (typeArgs.length == 2 &&
-                            typeArgs[0].equals(String.class) &&
-                            typeArgs[1] instanceof ParameterizedType) {
+                    if (typeArgs.length == 2 && 
+                        typeArgs[0].equals(String.class) && 
+                        typeArgs[1] instanceof ParameterizedType) {
                         ParameterizedType listType = (ParameterizedType) typeArgs[1];
-                        if (listType.getRawType().equals(List.class) &&
-                                listType.getActualTypeArguments()[0].equals(Upload.class)) {
+                        if (listType.getRawType().equals(List.class) && 
+                            listType.getActualTypeArguments()[0].equals(Upload.class)) {
                             args[i] = collectAllUploads(req, debug);
                             continue;
                         }
                     }
                 }
-                // Sinon, comportement par défaut (Map des paramètres)
                 args[i] = queryParams.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue()[0]));
                 continue;
             }
 
-            // Gérer List<Upload> pour un champ spécifique
             if (isMultipart && List.class.isAssignableFrom(paramType)) {
                 Type genericType = param.getParameterizedType();
                 if (genericType instanceof ParameterizedType) {
@@ -66,19 +75,19 @@ public class ArgumentResolver {
                 }
             }
 
-            // Gérer Upload unique
             if (isMultipart && Upload.class.equals(paramType)) {
                 args[i] = getSingleUpload(req, paramName, debug);
                 continue;
             }
 
-            // Comportement normal pour les autres types
+            // ============ GESTION MAP ============
             if (Map.class.isAssignableFrom(paramType)) {
                 args[i] = queryParams.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue()[0]));
                 continue;
             }
 
+            // ============ GESTION OBJETS CUSTOM ============
             if (isCustomObject(paramType)) {
                 if (paramType.isArray()) {
                     args[i] = bindObjectArray(paramType, paramName, queryParams, debug);
@@ -88,6 +97,7 @@ public class ArgumentResolver {
                 continue;
             }
 
+            // ============ GESTION TYPES SIMPLES ============
             String rawValue = pathParams != null && pathParams.containsKey(paramName)
                     ? pathParams.get(paramName)
                     : (queryParams.containsKey(paramName) ? queryParams.get(paramName)[0] : null);
@@ -105,10 +115,65 @@ public class ArgumentResolver {
         return args;
     }
 
+    // ===================== GESTION SESSION =====================
+
+    private CustomSession resolveSession(HttpServletRequest req, boolean create, StringBuilder debug) {
+        String sessionId = getSessionIdFromCookie(req);
+        
+        if (DEBUG && debug != null) {
+            debug.append("\n=== Résolution de la session ===\n");
+            debug.append("Session ID from cookie: ").append(sessionId != null ? sessionId : "null").append("\n");
+        }
+
+        CustomSession session = null;
+        
+        if (sessionId != null) {
+            session = SessionManager.getSession(sessionId);
+            if (DEBUG && debug != null) {
+                if (session != null) {
+                    debug.append("Session trouvée: ").append(sessionId).append("\n");
+                    debug.append("Session expirée: ").append(session.isExpired()).append("\n");
+                } else {
+                    debug.append("Session non trouvée dans SessionManager (peut-être expirée ou serveur redémarré)\n");
+                }
+            }
+            if (session != null) {
+                return session;
+            }
+        }
+
+        if (create) {
+            session = SessionManager.createSession();
+            if (DEBUG && debug != null) {
+                debug.append("Nouvelle session créée: ").append(session.getSessionId()).append("\n");
+            }
+            return session;
+        }
+
+        if (DEBUG && debug != null) {
+            debug.append("Aucune session (create=false)\n");
+        }
+        return null;
+    }
+
+    private String getSessionIdFromCookie(HttpServletRequest req) {
+        Cookie[] cookies = req.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (SESSION_COOKIE_NAME.equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    // ===================== GESTION UPLOAD =====================
+
     private Map<String, List<Upload>> collectAllUploads(HttpServletRequest req, StringBuilder debug) throws Exception {
         Map<String, List<Upload>> uploadMap = new HashMap<>();
         String uploadDir = req.getServletContext().getRealPath("/uploads");
-
+        
         if (DEBUG && debug != null) {
             debug.append("\n=== Collecte des uploads ===\n");
             debug.append("Upload directory: ").append(uploadDir).append("\n");
@@ -119,66 +184,67 @@ public class ArgumentResolver {
             if (fileName != null && !fileName.isEmpty()) {
                 String fieldName = part.getName();
                 Upload upload = new Upload(part, uploadDir);
-
+                
                 uploadMap.computeIfAbsent(fieldName, k -> new ArrayList<>()).add(upload);
-
+                
                 if (DEBUG && debug != null) {
                     debug.append("  ").append(fieldName).append(": ")
-                            .append(fileName).append(" (")
-                            .append(part.getSize()).append(" bytes)\n");
+                         .append(fileName).append(" (")
+                         .append(part.getSize()).append(" bytes)\n");
                 }
             }
         }
-
+        
         return uploadMap;
     }
 
-    private List<Upload> getUploadsByName(HttpServletRequest req, String fieldName, StringBuilder debug)
-            throws Exception {
+    private List<Upload> getUploadsByName(HttpServletRequest req, String fieldName, StringBuilder debug) throws Exception {
         List<Upload> uploads = new ArrayList<>();
         String uploadDir = req.getServletContext().getRealPath("/uploads");
-
+        
         for (Part part : req.getParts()) {
             if (part.getName().equals(fieldName)) {
                 String fileName = part.getSubmittedFileName();
                 if (fileName != null && !fileName.isEmpty()) {
                     Upload upload = new Upload(part, uploadDir);
                     uploads.add(upload);
-
+                    
                     if (DEBUG && debug != null) {
                         debug.append("Upload: ").append(fieldName).append(" → ")
-                                .append(fileName).append(" (")
-                                .append(part.getSize()).append(" bytes)\n");
+                             .append(fileName).append(" (")
+                             .append(part.getSize()).append(" bytes)\n");
                     }
                 }
             }
         }
-
+        
         return uploads;
     }
 
     private Upload getSingleUpload(HttpServletRequest req, String fieldName, StringBuilder debug) throws Exception {
         String uploadDir = req.getServletContext().getRealPath("/uploads");
-
+        
         for (Part part : req.getParts()) {
             if (part.getName().equals(fieldName)) {
                 String fileName = part.getSubmittedFileName();
                 if (fileName != null && !fileName.isEmpty()) {
                     Upload upload = new Upload(part, uploadDir);
-
+                    
                     if (DEBUG && debug != null) {
                         debug.append("Upload: ").append(fieldName).append(" → ")
-                                .append(fileName).append(" (")
-                                .append(part.getSize()).append(" bytes)\n");
+                             .append(fileName).append(" (")
+                             .append(part.getSize()).append(" bytes)\n");
                     }
-
+                    
                     return upload;
                 }
             }
         }
-
+        
         return null;
     }
+
+    // ===================== HELPER METHODS =====================
 
     private String getParameterName(Parameter param) {
         RequestParam annotation = param.getAnnotation(RequestParam.class);
@@ -189,6 +255,11 @@ public class ArgumentResolver {
     }
 
     private boolean isCustomObject(Class<?> type) {
+        // Exclure CustomSession des objets custom (traité spécialement)
+        if (type.equals(CustomSession.class)) {
+            return false;
+        }
+        
         if (type.isArray()) {
             Class<?> component = type.getComponentType();
             return !component.isPrimitive()

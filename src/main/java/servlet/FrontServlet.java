@@ -71,6 +71,15 @@ public class FrontServlet extends HttpServlet {
         }
 
         Object[] args = argumentResolver.resolve(routeMatch, req, debug);
+
+        // Stocker la session dans la requête pour le ResponseRenderer
+        for (Object arg : args) {
+            if (arg instanceof servlet.session.CustomSession) {
+                req.setAttribute("__current_session", arg);
+                break;
+            }
+        }
+
         Object result = routeMatch.getMethodInvoker().execute(args);
 
         responseRenderer.render(resp, result, req, getServletContext(),
