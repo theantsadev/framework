@@ -6,12 +6,11 @@ import java.util.Map;
 
 public class ModelView {
     String view;
+    Map<String, Object> attributes;
 
     public void setAttributes(Map<String, Object> attributes) {
         this.attributes = attributes;
     }
-
-    Map<String, Object> attributes;
 
     public String getView() {
         return view;
