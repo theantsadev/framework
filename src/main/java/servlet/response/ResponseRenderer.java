@@ -1,23 +1,30 @@
 package servlet.response;
 
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Part;
 import servlet.ModelView;
 import servlet.annotations.Json;
+import servlet.annotations.Session;
 import servlet.api.ApiResponse;
+import servlet.session.CustomSession;
 import servlet.utils.JsonUtil;
-import servlet.utils.Upload;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 
 public class ResponseRenderer {
 
+    private static final String SESSION_COOKIE_NAME = "FRAMEWORK_SESSION_ID"; // Changé pour éviter conflit avec Tomcat
+
     public void render(HttpServletResponse resp, Object result, HttpServletRequest req,
             ServletContext context, Method method, StringBuilder debug) throws Exception {
+
+        // Gérer le cookie de session si une session a été utilisée
+        handleSessionCookie(req, resp, method);
 
         boolean isJson = method.isAnnotationPresent(Json.class);
 
@@ -30,6 +37,45 @@ public class ResponseRenderer {
         } else {
             sendPlain(resp, result != null ? result.toString() : "null");
         }
+    }
+
+    /**
+     * Crée ou met à jour le cookie de session si une session a été utilisée dans la
+     * méthode
+     */
+    private void handleSessionCookie(HttpServletRequest req, HttpServletResponse resp, Method method) {
+        // Vérifier si la méthode utilise @Session
+        boolean hasSessionParam = false;
+        for (Parameter param : method.getParameters()) {
+            if (param.isAnnotationPresent(Session.class)) {
+                hasSessionParam = true;
+                break;
+            }
+        }
+
+        if (!hasSessionParam) {
+            return;
+        }
+
+        // Récupérer la session depuis l'attribut de requête
+        CustomSession session = (CustomSession) req.getAttribute("__current_session");
+
+        if (session == null) {
+            System.err.println(
+                    "[ResponseRenderer] ATTENTION: Session utilisée mais non trouvée dans les attributs de requête");
+            return;
+        }
+
+        // Toujours créer/mettre à jour le cookie pour maintenir la session
+        Cookie sessionCookie = new Cookie(SESSION_COOKIE_NAME, session.getSessionId());
+        sessionCookie.setHttpOnly(true);
+        sessionCookie.setPath(req.getContextPath().isEmpty() ? "/" : req.getContextPath());
+        sessionCookie.setMaxAge(session.getMaxInactiveInterval());
+
+        resp.addCookie(sessionCookie);
+
+        System.out.println("[ResponseRenderer] Cookie de session envoyé: " + session.getSessionId() +
+                " (isNew=" + session.isNew() + ", path=" + sessionCookie.getPath() + ")");
     }
 
     public void notFound(HttpServletResponse resp, StringBuilder debug) throws IOException {
