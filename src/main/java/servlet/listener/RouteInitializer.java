@@ -20,6 +20,7 @@ public class RouteInitializer implements ServletContextListener {
             UrlRouter routes = new UrlRouter();
 
             List<Class<?>> classes = ClassDetector.getAllClassesFromClasspath();
+            
 
             for (Class<?> controllerClass : classes) {
 

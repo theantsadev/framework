@@ -1,8 +1,10 @@
 package servlet.binding;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
 import servlet.annotations.RequestParam;
 import servlet.utils.RouteMatch;
+import servlet.utils.Upload;
 
 import java.lang.reflect.*;
 import java.util.*;
@@ -10,8 +12,7 @@ import java.util.stream.Collectors;
 
 public class ArgumentResolver {
 
-    private static final boolean DEBUG = true; // ou injecté via constructor
-
+    private static final boolean DEBUG = true;
     private final TypeConverter converter = new TypeConverter();
 
     public Object[] resolve(RouteMatch routeMatch, HttpServletRequest req, StringBuilder debug) throws Exception {
@@ -22,21 +23,67 @@ public class ArgumentResolver {
         Map<String, String> pathParams = routeMatch.getPathParams();
         Map<String, String[]> queryParams = req.getParameterMap();
 
+        // Vérifier si c'est une requête multipart (upload)
+        boolean isMultipart = req.getContentType() != null &&
+                req.getContentType().toLowerCase().startsWith("multipart/form-data");
+
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = getParameterName(param);
+            Class<?> paramType = param.getType();
 
-            if (Map.class.isAssignableFrom(param.getType())) {
+            // Gérer Map<String, List<Upload>> pour les uploads multiples
+            if (isMultipart && Map.class.isAssignableFrom(paramType)) {
+                Type genericType = param.getParameterizedType();
+                if (genericType instanceof ParameterizedType) {
+                    Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
+                    if (typeArgs.length == 2 &&
+                            typeArgs[0].equals(String.class) &&
+                            typeArgs[1] instanceof ParameterizedType) {
+                        ParameterizedType listType = (ParameterizedType) typeArgs[1];
+                        if (listType.getRawType().equals(List.class) &&
+                                listType.getActualTypeArguments()[0].equals(Upload.class)) {
+                            args[i] = collectAllUploads(req, debug);
+                            continue;
+                        }
+                    }
+                }
+                // Sinon, comportement par défaut (Map des paramètres)
                 args[i] = queryParams.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue()[0]));
                 continue;
             }
 
-            if (isCustomObject(param.getType())) {
-                if (param.getType().isArray()) {
-                    args[i] = bindObjectArray(param.getType(), paramName, queryParams, debug);
+            // Gérer List<Upload> pour un champ spécifique
+            if (isMultipart && List.class.isAssignableFrom(paramType)) {
+                Type genericType = param.getParameterizedType();
+                if (genericType instanceof ParameterizedType) {
+                    Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
+                    if (typeArgs.length == 1 && typeArgs[0].equals(Upload.class)) {
+                        args[i] = getUploadsByName(req, paramName, debug);
+                        continue;
+                    }
+                }
+            }
+
+            // Gérer Upload unique
+            if (isMultipart && Upload.class.equals(paramType)) {
+                args[i] = getSingleUpload(req, paramName, debug);
+                continue;
+            }
+
+            // Comportement normal pour les autres types
+            if (Map.class.isAssignableFrom(paramType)) {
+                args[i] = queryParams.entrySet().stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue()[0]));
+                continue;
+            }
+
+            if (isCustomObject(paramType)) {
+                if (paramType.isArray()) {
+                    args[i] = bindObjectArray(paramType, paramName, queryParams, debug);
                 } else {
-                    args[i] = bindObject(param.getType(), paramName, queryParams, debug);
+                    args[i] = bindObject(paramType, paramName, queryParams, debug);
                 }
                 continue;
             }
@@ -45,17 +92,92 @@ public class ArgumentResolver {
                     ? pathParams.get(paramName)
                     : (queryParams.containsKey(paramName) ? queryParams.get(paramName)[0] : null);
 
-            args[i] = converter.convert(rawValue, param.getType());
+            args[i] = converter.convert(rawValue, paramType);
 
             if (DEBUG && debug != null) {
                 debug.append("Param #").append(i)
                         .append(" [").append(paramName)
                         .append("]  ").append(rawValue)
                         .append("  →  ").append(args[i])
-                        .append(" (").append(param.getType().getSimpleName()).append(")\n");
+                        .append(" (").append(paramType.getSimpleName()).append(")\n");
             }
         }
         return args;
+    }
+
+    private Map<String, List<Upload>> collectAllUploads(HttpServletRequest req, StringBuilder debug) throws Exception {
+        Map<String, List<Upload>> uploadMap = new HashMap<>();
+        String uploadDir = req.getServletContext().getRealPath("/uploads");
+
+        if (DEBUG && debug != null) {
+            debug.append("\n=== Collecte des uploads ===\n");
+            debug.append("Upload directory: ").append(uploadDir).append("\n");
+        }
+
+        for (Part part : req.getParts()) {
+            String fileName = part.getSubmittedFileName();
+            if (fileName != null && !fileName.isEmpty()) {
+                String fieldName = part.getName();
+                Upload upload = new Upload(part, uploadDir);
+
+                uploadMap.computeIfAbsent(fieldName, k -> new ArrayList<>()).add(upload);
+
+                if (DEBUG && debug != null) {
+                    debug.append("  ").append(fieldName).append(": ")
+                            .append(fileName).append(" (")
+                            .append(part.getSize()).append(" bytes)\n");
+                }
+            }
+        }
+
+        return uploadMap;
+    }
+
+    private List<Upload> getUploadsByName(HttpServletRequest req, String fieldName, StringBuilder debug)
+            throws Exception {
+        List<Upload> uploads = new ArrayList<>();
+        String uploadDir = req.getServletContext().getRealPath("/uploads");
+
+        for (Part part : req.getParts()) {
+            if (part.getName().equals(fieldName)) {
+                String fileName = part.getSubmittedFileName();
+                if (fileName != null && !fileName.isEmpty()) {
+                    Upload upload = new Upload(part, uploadDir);
+                    uploads.add(upload);
+
+                    if (DEBUG && debug != null) {
+                        debug.append("Upload: ").append(fieldName).append(" → ")
+                                .append(fileName).append(" (")
+                                .append(part.getSize()).append(" bytes)\n");
+                    }
+                }
+            }
+        }
+
+        return uploads;
+    }
+
+    private Upload getSingleUpload(HttpServletRequest req, String fieldName, StringBuilder debug) throws Exception {
+        String uploadDir = req.getServletContext().getRealPath("/uploads");
+
+        for (Part part : req.getParts()) {
+            if (part.getName().equals(fieldName)) {
+                String fileName = part.getSubmittedFileName();
+                if (fileName != null && !fileName.isEmpty()) {
+                    Upload upload = new Upload(part, uploadDir);
+
+                    if (DEBUG && debug != null) {
+                        debug.append("Upload: ").append(fieldName).append(" → ")
+                                .append(fileName).append(" (")
+                                .append(part.getSize()).append(" bytes)\n");
+                    }
+
+                    return upload;
+                }
+            }
+        }
+
+        return null;
     }
 
     private String getParameterName(Parameter param) {

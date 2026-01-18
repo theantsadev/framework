@@ -6,9 +6,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
 import servlet.ModelView;
 import servlet.annotations.Json;
-import servlet.annotations.Upload;
 import servlet.api.ApiResponse;
 import servlet.utils.JsonUtil;
+import servlet.utils.Upload;
 
 import java.io.File;
 import java.io.IOException;
@@ -18,24 +18,6 @@ public class ResponseRenderer {
 
     public void render(HttpServletResponse resp, Object result, HttpServletRequest req,
             ServletContext context, Method method, StringBuilder debug) throws Exception {
-
-        boolean isUpload = method.isAnnotationPresent(Upload.class);
-        if (isUpload) {
-            Upload uploadAnno = method.getAnnotation(Upload.class);
-            String uploadDir = uploadAnno.directory();
-            String uploadPath = context.getRealPath("/") + File.separator + uploadDir;
-            File uploadDirectory = new File(uploadPath);
-            if (!uploadDirectory.exists()) {
-                uploadDirectory.mkdirs();
-            }
-            for (Part part : req.getParts()) {
-                String fileName = part.getSubmittedFileName();
-                if (fileName != null) {
-                    part.write(uploadPath + File.separator + fileName);
-                }
-            }
-
-        }
 
         boolean isJson = method.isAnnotationPresent(Json.class);
 
