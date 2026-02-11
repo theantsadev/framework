@@ -8,6 +8,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import servlet.binding.ArgumentResolver;
 import servlet.response.ResponseRenderer;
+import servlet.security.ForbiddenException;
+import servlet.security.SecurityChecker;
+import servlet.security.UnauthorizedException;
+import servlet.session.CustomSession;
 import servlet.utils.RouteMatch;
 import servlet.utils.UrlRouter;
 
@@ -23,6 +27,7 @@ public class FrontServlet extends HttpServlet {
     private UrlRouter routes;
     private ArgumentResolver argumentResolver;
     private ResponseRenderer responseRenderer;
+    private SecurityChecker securityChecker;
 
     private static final boolean DEBUG = true;
 
@@ -35,6 +40,7 @@ public class FrontServlet extends HttpServlet {
         }
         argumentResolver = new ArgumentResolver();
         responseRenderer = new ResponseRenderer();
+        securityChecker = new SecurityChecker();
     }
 
     @Override
@@ -73,11 +79,21 @@ public class FrontServlet extends HttpServlet {
         Object[] args = argumentResolver.resolve(routeMatch, req, debug);
 
         // Stocker la session dans la requête pour le ResponseRenderer
+        CustomSession session = null;
         for (Object arg : args) {
-            if (arg instanceof servlet.session.CustomSession) {
+            if (arg instanceof CustomSession) {
+                session = (CustomSession) arg;
                 req.setAttribute("__current_session", arg);
                 break;
             }
+        }
+
+        // Vérifier les autorisations (@Authorized, @Role)
+        Method method = routeMatch.getMethodInvoker().getMethod();
+        securityChecker.checkAuthorization(method, session);
+
+        if (debug != null) {
+            debug.append("Sécurité     : OK\n");
         }
 
         Object result = routeMatch.getMethodInvoker().execute(args);
@@ -88,13 +104,28 @@ public class FrontServlet extends HttpServlet {
 
     private void handleException(HttpServletResponse resp, Exception e, Method method, StringBuilder debug) {
         try {
-            resp.setStatus(500);
+            int statusCode = 500;
+            String errorType = "ERREUR";
+            
+            // Gestion des exceptions de sécurité
+            if (e instanceof UnauthorizedException) {
+                statusCode = 401;
+                errorType = "NON AUTHENTIFIÉ";
+            } else if (e instanceof ForbiddenException) {
+                statusCode = 403;
+                errorType = "ACCÈS INTERDIT";
+            }
+            
+            resp.setStatus(statusCode);
             resp.setContentType("text/plain;charset=UTF-8");
             var out = resp.getWriter();
             if (debug != null)
                 out.println(debug);
-            out.println("\n========== ERREUR ==========");
-            e.printStackTrace(out);
+            out.println("\n========== " + errorType + " (" + statusCode + ") ==========");
+            out.println(e.getMessage());
+            if (statusCode == 500) {
+                e.printStackTrace(out);
+            }
         } catch (Exception ex) {
             ex.printStackTrace();
         }

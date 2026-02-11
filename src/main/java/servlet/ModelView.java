@@ -21,6 +21,7 @@ public class ModelView {
     }
 
     public ModelView(String view) {
+        attributes = new HashMap<>();
         this.view = view;
     }
 
