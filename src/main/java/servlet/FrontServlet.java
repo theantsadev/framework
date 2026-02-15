@@ -41,6 +41,15 @@ public class FrontServlet extends HttpServlet {
         argumentResolver = new ArgumentResolver();
         responseRenderer = new ResponseRenderer();
         securityChecker = new SecurityChecker();
+
+        // Vérifier la présence de Jackson pour les fonctionnalités JSON
+        try {
+            Class.forName("com.fasterxml.jackson.databind.ObjectMapper");
+            Class.forName("com.fasterxml.jackson.annotation.JsonInclude");
+        } catch (ClassNotFoundException e) {
+            context.log(
+                    "[Framework] ATTENTION: Jackson non trouvé sur le classpath. Si vous utilisez JsonUtil, ApiResponse ou ErrorInfo, ajoutez les dépendances suivantes : jackson-annotations-2.20.jar, jackson-core-2.20.1.jar, jackson-databind-2.20.1.jar");
+        }
     }
 
     @Override
@@ -106,7 +115,7 @@ public class FrontServlet extends HttpServlet {
         try {
             int statusCode = 500;
             String errorType = "ERREUR";
-            
+
             // Gestion des exceptions de sécurité
             if (e instanceof UnauthorizedException) {
                 statusCode = 401;
@@ -115,7 +124,7 @@ public class FrontServlet extends HttpServlet {
                 statusCode = 403;
                 errorType = "ACCÈS INTERDIT";
             }
-            
+
             resp.setStatus(statusCode);
             resp.setContentType("text/plain;charset=UTF-8");
             var out = resp.getWriter();
