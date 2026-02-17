@@ -1,5 +1,6 @@
 package servlet;
 
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.MultipartConfig;
@@ -56,22 +57,80 @@ public class FrontServlet extends HttpServlet {
     protected void service(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
 
+        String path = req.getRequestURI().substring(req.getContextPath().length());
+
+        // Vérifier si c'est une ressource statique
+        if (isStaticResource(path)) {
+            serveStaticResource(req, resp, path);
+            return;
+        }
+
         StringBuilder debugOutput = DEBUG ? new StringBuilder()
                 .append("\n========== DEBUG FrontServlet ==========\n")
                 .append("HTTP Method : ").append(req.getMethod()).append("\n")
                 .append("URL         : ").append(req.getRequestURI()).append("\n") : null;
 
         try {
-            processRequest(req, resp, debugOutput);
+            processRequest(req, resp, path, debugOutput);
         } catch (Exception e) {
             handleException(resp, e, null, debugOutput);
         }
     }
 
-    private void processRequest(HttpServletRequest req, HttpServletResponse resp, StringBuilder debug)
+    /**
+     * Vérifie si le chemin correspond à une ressource statique existante.
+     */
+    private boolean isStaticResource(String path) {
+        if (path == null || path.isEmpty() || path.equals("/")) {
+            return false;
+        }
+        
+        // Vérifier si la ressource existe physiquement
+        try {
+            java.net.URL resource = getServletContext().getResource(path);
+            return resource != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Délègue le service des ressources statiques au servlet par défaut du conteneur.
+     */
+    private void serveStaticResource(HttpServletRequest req, HttpServletResponse resp, String path)
+            throws ServletException, IOException {
+        
+        // Utiliser le servlet par défaut pour servir les fichiers statiques
+        RequestDispatcher dispatcher = getServletContext().getNamedDispatcher("default");
+        
+        if (dispatcher != null) {
+            dispatcher.forward(req, resp);
+        } else {
+            // Fallback : essayer de trouver la ressource directement
+            java.io.InputStream is = getServletContext().getResourceAsStream(path);
+            if (is != null) {
+                // Définir le content-type approprié
+                String contentType = getServletContext().getMimeType(path);
+                if (contentType != null) {
+                    resp.setContentType(contentType);
+                }
+                
+                // Copier le contenu vers la réponse
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    resp.getOutputStream().write(buffer, 0, bytesRead);
+                }
+                is.close();
+            } else {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Resource not found: " + path);
+            }
+        }
+    }
+
+    private void processRequest(HttpServletRequest req, HttpServletResponse resp, String path, StringBuilder debug)
             throws Exception {
 
-        String path = req.getRequestURI().substring(req.getContextPath().length());
         RouteMatch routeMatch = routes.findByUrl(path, req.getMethod());
 
         if (routeMatch == null) {
